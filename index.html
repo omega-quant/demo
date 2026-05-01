@@ -1,33 +1,292 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Love Runner</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Love Runner</title>
+
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: linear-gradient(to bottom, #87CEEB, #ffffff);
+    font-family: Arial;
+}
+
+#gameContainer {
+    position: relative;
+    width: 350px;
+    height: 600px;
+}
+
+canvas {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    border-radius: 12px;
+}
+
+/* OVERLAY */
+.overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    background: rgba(0,0,0,0.6);
+    color: white;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.hidden {
+    display: none;
+}
+
+button {
+    padding: 12px 20px;
+    font-size: 18px;
+    margin-top: 15px;
+    border: none;
+    border-radius: 8px;
+    background: #ff4d6d;
+    color: white;
+    cursor: pointer;
+}
+
+#score {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 22px;
+    font-weight: bold;
+    z-index: 5;
+}
+</style>
 </head>
 
 <body>
 
-<div class="game-container">
+<div id="gameContainer">
 
     <canvas id="gameCanvas"></canvas>
 
-    <div id="startScreen" class="start-screen">
+    <div id="startScreen" class="overlay">
         <h1>❤️ Love Runner ❤️</h1>
-        <button id="playBtn" class="btn">Play</button>
+        <button id="playBtn">Play</button>
     </div>
 
-    <div id="gameOverScreen" class="start-screen hidden">
+    <div id="gameOverScreen" class="overlay hidden">
         <h1 id="finalText">Game Over</h1>
-        <button id="restartBtn" class="btn">Restart</button>
+        <button id="restartBtn">Restart</button>
     </div>
 
-    <div id="score" class="score">0</div>
+    <div id="score">0</div>
 
 </div>
 
-<script src="script.js"></script>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = 350;
+canvas.height = 600;
+
+// IMAGES
+const playerImg = new Image();
+playerImg.src = "player.png";
+
+const gfImg = new Image();
+gfImg.src = "gf.png";
+
+const bambooImg = new Image();
+bambooImg.src = "bamboo.png";
+
+// UI
+const startScreen = document.getElementById("startScreen");
+const gameOverScreen = document.getElementById("gameOverScreen");
+const playBtn = document.getElementById("playBtn");
+const restartBtn = document.getElementById("restartBtn");
+const scoreDisplay = document.getElementById("score");
+const finalText = document.getElementById("finalText");
+
+// GAME STATE
+let gameRunning = false;
+let gameOver = false;
+let hugging = false;
+let score = 0;
+
+// PLAYER
+let player;
+
+// DATA
+let pipes;
+let frame;
+let pipeSpeed;
+let gf;
+
+// PHYSICS (SMOOTH)
+let gravity = 0.15;
+let jump = -4.2;
+let maxFall = 3.5;
+
+// INIT
+function init() {
+    player = { x: 80, y: 300, width: 50, height: 50, velocity: 0 };
+    pipes = [];
+    frame = 0;
+    score = 0;
+    pipeSpeed = 0.9;
+    gameOver = false;
+    hugging = false;
+
+    gf = { x: 2500, y: 250, width: 60, height: 60 };
+
+    scoreDisplay.innerText = score;
+}
+
+// PLAY BUTTON (100% working)
+playBtn.onclick = function () {
+    console.log("PLAY CLICKED");
+
+    startScreen.style.display = "none";
+    gameOverScreen.style.display = "none";
+
+    init();
+    gameRunning = true;
+};
+
+// RESTART
+restartBtn.onclick = function () {
+    gameOverScreen.style.display = "none";
+    init();
+    gameRunning = true;
+};
+
+// CONTROL
+document.addEventListener("click", function () {
+    if (!gameRunning || gameOver) return;
+    player.velocity = jump;
+});
+
+// CREATE PIPE (FIXED)
+function createPipe() {
+    let gap = 240;
+    let gapY = Math.random() * (canvas.height - gap - 120) + 60;
+
+    pipes.push({
+        x: canvas.width,
+        width: 100,
+        gapY: gapY,
+        gapHeight: gap,
+        passed: false
+    });
+}
+
+// UPDATE
+function update() {
+    if (!gameRunning) return;
+    if (gameOver && !hugging) return;
+
+    frame++;
+
+    // PLAYER
+    player.velocity += gravity;
+    if (player.velocity > maxFall) player.velocity = maxFall;
+    player.y += player.velocity;
+
+    // PIPES
+    if (frame % 140 === 0) createPipe();
+
+    pipes.forEach(pipe => {
+        pipe.x -= pipeSpeed;
+
+        // SCORE FIX
+        if (!pipe.passed && pipe.x + pipe.width < player.x) {
+            pipe.passed = true;
+            score++;
+            scoreDisplay.innerText = score;
+        }
+
+        // COLLISION
+        if (
+            !hugging &&
+            player.x < pipe.x + pipe.width &&
+            player.x + player.width > pipe.x &&
+            (player.y < pipe.gapY ||
+             player.y + player.height > pipe.gapY + pipe.gapHeight)
+        ) {
+            endGame(false);
+        }
+    });
+
+    // WALL
+    if (!hugging && (player.y < 0 || player.y + player.height > canvas.height)) {
+        endGame(false);
+    }
+
+    // GF MOVE
+    gf.x -= pipeSpeed;
+
+    // WIN
+    if (
+        !hugging &&
+        player.x < gf.x + gf.width &&
+        player.x + player.width > gf.x &&
+        player.y < gf.y + gf.height &&
+        player.y + player.height > gf.y
+    ) {
+        hugging = true;
+        endGame(true);
+    }
+
+    // HUG ANIMATION
+    if (hugging) {
+        player.x += (gf.x - player.x) * 0.05;
+        player.y += (gf.y - player.y) * 0.05;
+    }
+}
+
+// DRAW
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    pipes.forEach(pipe => {
+        ctx.drawImage(bambooImg, pipe.x, 0, pipe.width, pipe.gapY);
+        ctx.drawImage(bambooImg, pipe.x, pipe.gapY + pipe.gapHeight, pipe.width, canvas.height);
+    });
+
+    ctx.drawImage(gfImg, gf.x, gf.y, gf.width, gf.height);
+    ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+}
+
+// END GAME
+function endGame(win) {
+    gameOver = true;
+    gameRunning = false;
+
+    setTimeout(() => {
+        gameOverScreen.style.display = "flex";
+        finalText.innerText = win ? "❤️ You Won ❤️" : "Game Over";
+    }, 800);
+}
+
+// LOOP
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
 
 </body>
 </html>
